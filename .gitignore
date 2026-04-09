@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Checkpoints (only track last.pth + config.json via explicit add)
+checkpoints/*/epoch_*.pth
+
+# OS
+.DS_Store
+*.swp
+
+# Logs
+*.log
+nohup.out
+
+# Third-party (symlink, clone separately)
+third_party/
+
+# Temp
+/tmp/

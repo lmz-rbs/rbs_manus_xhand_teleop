@@ -1,0 +1,28 @@
+[project]
+name = "manus-xhand-teleop"
+version = "0.1.0"
+description = "Manus glove → GeoRT retargeting → XHand dexterous hand teleoperation"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.21",
+    "scipy>=1.7",
+    "torch>=2.0",
+    "torchvision",
+    "sapien>=2.2",
+    "pyzmq>=22.0",
+    "tqdm",
+    "trimesh",
+    "open3d",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pybind11>=2.10",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
