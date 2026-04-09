@@ -22,6 +22,7 @@ import numpy as np
 import math
 import time
 import logging
+from xhand_controller import xhand_control
 
 logger = logging.getLogger(__name__)
 
@@ -69,10 +70,10 @@ class XHandController:
     ]
     
     # Default PD gains
-    DEFAULT_KP = 30.0
-    DEFAULT_KI = 0.0
-    DEFAULT_KD = 1.0
-    DEFAULT_TOR_MAX = 500.0
+    DEFAULT_KP = 100
+    DEFAULT_KI = 0
+    DEFAULT_KD = 5
+    DEFAULT_TOR_MAX = 500
     
     # Preset actions (degrees) from xhand SDK example
     PRESETS = {
@@ -82,7 +83,7 @@ class XHandController:
         "ok":    [45.88, 41.54, 67.35, 2.22, 80.45, 70.82, 31.37, 10.39, 13.69, 16.88, 1.39, 10.55],
     }
 
-    def __init__(self, port="/dev/ttyUSB0", hand_id=0, baudrate=115200,
+    def __init__(self, port="/dev/ttyUSB0", hand_id=0, baudrate=3000000,
                  kp=None, ki=None, kd=None, tor_max=None):
         self.port = port
         self.hand_id = hand_id
@@ -104,27 +105,27 @@ class XHandController:
         """Connect to the XHand via serial port."""
         try:
             # import xhand_control
-            from xhand_controller import xhand_control
-            
+            # from xhand_controller import xhand_control
+            print(11111)
             self._hand = xhand_control.XHandControl()
-            ret = self._hand.open_serial(self.port, self.baudrate)
+            rsp = self._hand.open_serial(self.port, self.baudrate); ret = rsp.error_code
             if ret != 0:
                 logger.error(f"Failed to open XHand on {self.port}, return code: {ret}")
                 return False
-            
+            print(22222)
             self._command = xhand_control.HandCommand_t()
-            
+            print(33333)
             # Set default PD gains for all motors
             for i in range(12):
-                self._command.finger_command[i].id = i
-                self._command.finger_command[i].kp = self.kp
-                self._command.finger_command[i].ki = self.ki
-                self._command.finger_command[i].kd = self.kd
-                self._command.finger_command[i].tor_max = self.tor_max
+                self._command.finger_command[i].id = int(i)
+                self._command.finger_command[i].kp = int(self.kp)
+                self._command.finger_command[i].ki = int(self.ki)
+                self._command.finger_command[i].kd = int(self.kd)
+                self._command.finger_command[i].tor_max = int(self.tor_max)
                 self._command.finger_command[i].mode = 3  # Position mode
             
             # Set position mode
-            
+            print(44444)
             self._connected = True
             logger.info(f"XHand connected on {self.port}")
             return True
@@ -155,7 +156,7 @@ class XHandController:
             self._command.finger_command[i].position = float(qpos_clipped[i])
         
         try:
-            self._hand.send_command(self._command)
+            self._hand.send_command(self.hand_id, self._command)
             return True
         except Exception as e:
             logger.error(f"Failed to send command: {e}")

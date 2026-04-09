@@ -20,3 +20,6 @@ third_party/
 
 # Temp
 /tmp/
+logs/
+teleop_bak.py
+*.whl

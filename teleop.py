@@ -30,6 +30,7 @@ import logging
 import argparse
 import signal
 from pathlib import Path
+from datetime import datetime
 
 # Add project src to path
 PROJECT_ROOT = Path(__file__).parent.resolve()
@@ -41,7 +42,7 @@ GEORT_ROOT = PROJECT_ROOT / "third_party" / "GeoRT"
 sys.path.insert(0, str(GEORT_ROOT))
 
 from manus_bridge import ManusGloveBridge
-from xhand_controller import XHandController, XHandSimController, create_controller
+from src.xhand_controller_local import XHandController, XHandSimController, create_controller
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +54,11 @@ class TeleOpPipeline:
     Manus Glove -> (21,3) keypoints -> GeoRT Model -> (12,) qpos -> XHand
     """
 
-    def __init__(self, mocap_mode="zmq", ckpt_tag=None, 
+    def __init__(self, mocap_mode="zmq", ckpt_tag=None,
                  hand_sim=False, hand_port="/dev/ttyUSB0",
                  enable_viz=False, rate_hz=50,
-                 smoothing_alpha=0.3, zmq_port=8765):
+                 smoothing_alpha=0.3, zmq_port=8765,
+                 record_traj=False, traj_path=None, plot_traj=False):
         """
         Args:
             mocap_mode: "zmq" | "integrated" | "sim"
@@ -67,12 +69,24 @@ class TeleOpPipeline:
             rate_hz: Control loop rate
             smoothing_alpha: Exponential smoothing factor (0=no smoothing, 1=no filtering)
             zmq_port: ZMQ port for mocap data
+            record_traj: Record retargeted qpos trajectory
+            traj_path: Output CSV path for saved trajectory
+            plot_traj: Plot trajectory curves when stopping
         """
         self.rate_hz = rate_hz
         self.smoothing_alpha = smoothing_alpha
         self.enable_viz = enable_viz
         self._running = False
         self._prev_qpos = None
+        self._shutdown_done = False
+
+        # Trajectory recording
+        self.record_traj = record_traj
+        self.plot_traj = plot_traj
+        self.traj_path = traj_path
+        self._traj_t0 = None
+        self._traj_t = []
+        self._traj_q = []
         
         # 1. Mocap bridge
         logger.info(f"Initializing mocap bridge: mode={mocap_mode}")
@@ -100,6 +114,59 @@ class TeleOpPipeline:
         self.hand_model = None
         if enable_viz:
             self._setup_visualization()
+
+    def _record_trajectory(self, qpos):
+        """Record one trajectory sample."""
+        if not self.record_traj:
+            return
+
+        if self._traj_t0 is None:
+            self._traj_t0 = time.time()
+
+        self._traj_t.append(time.time() - self._traj_t0)
+        self._traj_q.append(np.asarray(qpos, dtype=np.float32).copy())
+
+    def _save_and_plot_trajectory(self):
+        """Save trajectory to CSV and optionally plot curves."""
+        if not self.record_traj or len(self._traj_q) == 0:
+            return
+
+        q = np.stack(self._traj_q, axis=0)  # (N, 12)
+        t = np.asarray(self._traj_t, dtype=np.float32)  # (N,)
+
+        # Build output path
+        if self.traj_path:
+            out_path = Path(self.traj_path)
+        else:
+            out_dir = PROJECT_ROOT / "logs"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            out_path = out_dir / f"trajectory_{ts}.csv"
+
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Save CSV: t + 12 joints
+        data = np.concatenate([t[:, None], q], axis=1)
+        header = "t_sec," + ",".join([f"q{i}" for i in range(q.shape[1])])
+        np.savetxt(str(out_path), data, delimiter=",", header=header, comments="")
+        logger.info(f"Trajectory saved: {out_path} (samples={len(q)})")
+
+        if self.plot_traj:
+            try:
+                import matplotlib.pyplot as plt
+
+                plt.figure(figsize=(12, 6))
+                for i in range(q.shape[1]):
+                    plt.plot(t, q[:, i], label=f"q{i}")
+                plt.title("XHand Joint Trajectory")
+                plt.xlabel("Time (s)")
+                plt.ylabel("Joint Position (rad)")
+                plt.grid(True, alpha=0.3)
+                plt.legend(ncol=4, fontsize=8)
+                plt.tight_layout()
+                plt.show()
+            except ImportError:
+                logger.warning("matplotlib not found, skip plotting. Install with: pip install matplotlib")
     
     def _setup_visualization(self):
         """Initialize SAPIEN visualization."""
@@ -146,6 +213,9 @@ class TeleOpPipeline:
         
         # 3. Smooth
         qpos = self._smooth_qpos(qpos)
+
+        # 3.5. Record trajectory
+        self._record_trajectory(qpos)
         
         # 4. Send to hand
         self.hand.send_joint_positions(qpos)
@@ -204,6 +274,9 @@ class TeleOpPipeline:
     
     def stop(self):
         """Clean shutdown."""
+        if self._shutdown_done:
+            return
+        self._shutdown_done = True
         self._running = False
         
         logger.info("Shutting down...")
@@ -218,6 +291,9 @@ class TeleOpPipeline:
         
         self.hand.disconnect()
         self.mocap.close()
+
+        # Save/plot trajectory at the end
+        self._save_and_plot_trajectory()
         
         logger.info("Teleoperation pipeline shut down cleanly")
 
@@ -264,6 +340,12 @@ Examples:
                         help="Control loop rate (Hz)")
     parser.add_argument("--smoothing", type=float, default=0.3,
                         help="Exponential smoothing alpha (0-1, higher=less smooth)")
+    parser.add_argument("--record-traj", action="store_true",
+                        help="Record retargeted qpos trajectory")
+    parser.add_argument("--traj-path", type=str, default=None,
+                        help="Output CSV path for trajectory (default: logs/trajectory_*.csv)")
+    parser.add_argument("--plot-traj", action="store_true",
+                        help="Plot trajectory curves at shutdown (requires matplotlib)")
     
     # Logging
     parser.add_argument("--debug", action="store_true",
@@ -299,6 +381,9 @@ Examples:
         rate_hz=args.rate,
         smoothing_alpha=args.smoothing,
         zmq_port=args.zmq_port,
+        record_traj=args.record_traj,
+        traj_path=args.traj_path,
+        plot_traj=args.plot_traj,
     )
     
     pipeline.run()
