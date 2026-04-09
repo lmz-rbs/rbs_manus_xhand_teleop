@@ -103,10 +103,11 @@ class XHandController:
     def connect(self):
         """Connect to the XHand via serial port."""
         try:
-            import xhand_control
+            # import xhand_control
+            from xhand_controller import xhand_control
             
-            self._hand = xhand_control.HandController_t()
-            ret = self._hand.open(self.port, self.baudrate)
+            self._hand = xhand_control.XHandControl()
+            ret = self._hand.open_serial(self.port, self.baudrate)
             if ret != 0:
                 logger.error(f"Failed to open XHand on {self.port}, return code: {ret}")
                 return False
@@ -123,7 +124,6 @@ class XHandController:
                 self._command.finger_command[i].mode = 3  # Position mode
             
             # Set position mode
-            self._hand.set_hand_mode(3)
             
             self._connected = True
             logger.info(f"XHand connected on {self.port}")
@@ -194,7 +194,7 @@ class XHandController:
         """Close connection to XHand."""
         if self._connected and self._hand is not None:
             try:
-                self._hand.close()
+                self._hand.close_device()
             except Exception:
                 pass
             self._connected = False
