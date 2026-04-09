@@ -42,8 +42,18 @@ manus_xhand_teleop/
 ### 1. 环境安装
 
 ```bash
-cd /home/ps/lmz/ManusRetargeting/manus_xhand_teleop
+# 克隆项目
+git clone https://github.com/lmz-rbs/rbs_manus_xhand_teleop.git
+cd rbs_manus_xhand_teleop
+
+# 链接 GeoRT
+git clone https://github.com/facebookresearch/GeoRT.git third_party/GeoRT
+
+# 一键安装 (使用 uv, 自动创建 .venv)
 bash setup.sh
+
+# 激活环境
+source .venv/bin/activate
 ```
 
 ### 2. 测试模式（无需硬件）
