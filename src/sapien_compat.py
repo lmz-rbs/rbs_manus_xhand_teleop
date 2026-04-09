@@ -107,8 +107,10 @@ if _SAPIEN_MAJOR >= 3:
     # ----------------------------------------------------------------
     if not hasattr(sapien, "VulkanRenderer"):
         class _VulkanRenderer:
+            """Stub that signals SAPIEN 3 Viewer to use its default renderer."""
             def __init__(self, *args, **kwargs):
                 pass
+            _is_stub = True
         sapien.VulkanRenderer = _VulkanRenderer
         sapien.core.VulkanRenderer = _VulkanRenderer
 
@@ -187,22 +189,13 @@ if _SAPIEN_MAJOR >= 3:
             _OrigViewer = None
 
     if _OrigViewer is not None:
-        # Patch Viewer to accept renderer argument (ignored in SAPIEN 3)
         _orig_viewer_init = _OrigViewer.__init__
         def _patched_viewer_init(self, renderer=None, *args, **kwargs):
-            try:
-                _orig_viewer_init(self, *args, **kwargs)
-            except TypeError:
-                _orig_viewer_init(self)
-        # Only patch if needed
-        try:
-            import inspect
-            sig = inspect.signature(_orig_viewer_init)
-            params = list(sig.parameters.keys())
-            if len(params) <= 1:  # only self
-                _OrigViewer.__init__ = _patched_viewer_init
-        except Exception:
-            pass
+            # If renderer is our stub, pass None so SAPIEN 3 uses its default
+            if renderer is not None and getattr(renderer, '_is_stub', False):
+                renderer = None
+            _orig_viewer_init(self, renderer=renderer, *args, **kwargs)
+        _OrigViewer.__init__ = _patched_viewer_init
 
     print(f"[sapien_compat] Patched SAPIEN {sapien.__version__} for SAPIEN 2 API compatibility")
 
